@@ -14,6 +14,8 @@ RUN cargo build --release
 # Second stage: Create the minimal runtime image
 FROM containers.gingersociety.org/rust-rocket-api-runner:latest
 
+RUN apt-get install -y curl
+
 # Install kubectl
 RUN curl -LO "https://dl.k8s.io/release/$(curl -sL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && \
     install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl && \
