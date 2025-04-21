@@ -17,14 +17,63 @@ pub fn index() -> Json<MessageResponse> {
 }
 
 
-
 #[openapi(tag = "Kubernetes")]
 #[post("/kubectl", format = "json", data = "<params>")]
 pub async fn kubectl_command(params: Json<KubectlRequest>) -> Json<MessageResponse> {
-    let config_map_name = params.config_map_name.clone();
+    let models_py_content = params.models_py_content.clone();
 
-    let manifest = format!(
-        r#"
+    // First, create the ConfigMap with the models.py content and let Kubernetes generate the name
+    let config_map_result = task::spawn_blocking(move || {
+        // Create ConfigMap YAML with generateName instead of name
+        let config_map = format!(
+            r#"apiVersion: v1
+kind: ConfigMap
+metadata:
+  generateName: models-py-
+  namespace: tasks-ginger-db-compose-runtime
+data:
+  models.json: |
+{}"#,
+            // Indent each line of models_py_content with 4 spaces for YAML formatting
+            models_py_content.lines().map(|line| format!("    {}", line)).collect::<Vec<_>>().join("\n")
+        );
+
+        // Create the ConfigMap
+        let mut cmd = Command::new("kubectl")
+            .arg("create")
+            .arg("-f")
+            .arg("-")
+            .arg("-o=jsonpath={.metadata.name}")  // Output only the generated name
+            .env("KUBECONFIG", env::var("KUBECONFIG_PATH").expect("KUBECONFIG_PATH must be set"))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+
+        if let Some(stdin) = cmd.stdin.as_mut() {
+            stdin.write_all(config_map.as_bytes())?;
+        }
+
+        let output = cmd.wait_with_output()?;
+        Ok::<_, std::io::Error>(output)
+    })
+    .await;
+
+    // Extract the generated ConfigMap name and proceed with TaskRun creation
+    match config_map_result {
+        Ok(Ok(output)) if output.status.success() => {
+            // Extract the generated ConfigMap name from stdout
+            let config_map_name = String::from_utf8_lossy(&output.stdout).to_string();
+            
+            if config_map_name.is_empty() {
+                return Json(MessageResponse {
+                    message: "Failed to get ConfigMap name".to_string(),
+                });
+            }
+
+            // Now create the TaskRun using the generated ConfigMap name
+            let manifest = format!(
+                r#"
 apiVersion: tekton.dev/v1beta1
 kind: TaskRun
 metadata:
@@ -52,104 +101,117 @@ spec:
       configMap:
         name: {}
 "#,
-        config_map_name
-    );
+                config_map_name
+            );
 
-    let output_result = task::spawn_blocking(move || {
-        let mut cmd = Command::new("kubectl")
-            .arg("create")
-            .arg("-f")
-            .arg("-")
-            .env("KUBECONFIG", env::var("KUBECONFIG_PATH").expect("KUBECONFIG_PATH must be set"))
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
+            let output_result = task::spawn_blocking(move || {
+                let mut cmd = Command::new("kubectl")
+                    .arg("create")
+                    .arg("-f")
+                    .arg("-")
+                    .env("KUBECONFIG", env::var("KUBECONFIG_PATH").expect("KUBECONFIG_PATH must be set"))
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .spawn()?;
 
-        if let Some(stdin) = cmd.stdin.as_mut() {
-            stdin.write_all(manifest.as_bytes())?;
-        }
-
-        let output = cmd.wait_with_output()?;
-        Ok::<_, std::io::Error>(output)
-    })
-    .await;
-
-    match output_result {
-        Ok(Ok(output)) if output.status.success() => {
-            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    
-            // Parse TaskRun name (extract from stdout: "taskrun.tekton.dev/dry-run-8-abcde created")
-            let taskrun_name = stdout
-                .lines()
-                .find_map(|line| {
-                    line.split_whitespace()
-                        .find(|part| part.contains("dry-run-8-"))
-                        .map(|part| part.trim_start_matches("taskrun.tekton.dev/").to_string())
-                });
-    
-            if let Some(taskrun_name) = taskrun_name {
-                // Wait a moment to allow pods to be created
-                rocket::tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                let taskrun_name_cloned = taskrun_name.clone();
-
-                let pod_output_result = task::spawn_blocking(move || {
-                    Command::new("kubectl")
-                        .arg("get")
-                        .arg("pods")
-                        .arg("-n")
-                        .arg("tasks-ginger-db-compose-runtime")
-                        .arg("-l")
-                        .arg(format!("tekton.dev/taskRun={}", taskrun_name_cloned))
-                        .arg("-o")
-                        .arg("name")
-                        .env("KUBECONFIG", env::var("KUBECONFIG_PATH").expect("KUBECONFIG_PATH must be set"))
-                        .output()
-                })
-                .await;
-    
-                match pod_output_result {
-                    Ok(Ok(pod_output)) if pod_output.status.success() => {
-                        let pods = String::from_utf8_lossy(&pod_output.stdout).to_string();
-                        Json(MessageResponse {
-                            message: format!("Created TaskRun: {}\nPods:\n{}", taskrun_name, pods),
-                        })
-                    }
-                    Ok(Ok(pod_output)) => {
-                        let stderr = String::from_utf8_lossy(&pod_output.stderr).to_string();
-                        Json(MessageResponse {
-                            message: format!("TaskRun created but failed to fetch pods: {}", stderr),
-                        })
-                    }
-                    _ => Json(MessageResponse {
-                        message: format!("TaskRun created but pod lookup failed"),
-                    }),
+                if let Some(stdin) = cmd.stdin.as_mut() {
+                    stdin.write_all(manifest.as_bytes())?;
                 }
-            } else {
-                Json(MessageResponse {
-                    message: format!("TaskRun created but name could not be parsed:\n{}", stdout),
-                })
+
+                let output = cmd.wait_with_output()?;
+                Ok::<_, std::io::Error>(output)
+            })
+            .await;
+
+            match output_result {
+                Ok(Ok(output)) if output.status.success() => {
+                    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            
+                    // Parse TaskRun name (extract from stdout: "taskrun.tekton.dev/dry-run-8-abcde created")
+                    let taskrun_name = stdout
+                        .lines()
+                        .find_map(|line| {
+                            line.split_whitespace()
+                                .find(|part| part.contains("dry-run-8-"))
+                                .map(|part| part.trim_start_matches("taskrun.tekton.dev/").to_string())
+                        });
+            
+                    if let Some(taskrun_name) = taskrun_name {
+                        // Wait a moment to allow pods to be created
+                        rocket::tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                        let taskrun_name_cloned = taskrun_name.clone();
+
+                        let pod_output_result = task::spawn_blocking(move || {
+                            Command::new("kubectl")
+                                .arg("get")
+                                .arg("pods")
+                                .arg("-n")
+                                .arg("tasks-ginger-db-compose-runtime")
+                                .arg("-l")
+                                .arg(format!("tekton.dev/taskRun={}", taskrun_name_cloned))
+                                .arg("-o")
+                                .arg("name")
+                                .env("KUBECONFIG", env::var("KUBECONFIG_PATH").expect("KUBECONFIG_PATH must be set"))
+                                .output()
+                        })
+                        .await;
+            
+                        match pod_output_result {
+                            Ok(Ok(pod_output)) if pod_output.status.success() => {
+                                let pods = String::from_utf8_lossy(&pod_output.stdout).to_string();
+                                Json(MessageResponse {
+                                    message: format!("Created ConfigMap: {}\nCreated TaskRun: {}\nPods:\n{}", 
+                                                    config_map_name, taskrun_name, pods),
+                                })
+                            }
+                            Ok(Ok(pod_output)) => {
+                                let stderr = String::from_utf8_lossy(&pod_output.stderr).to_string();
+                                Json(MessageResponse {
+                                    message: format!("TaskRun created but failed to fetch pods: {}", stderr),
+                                })
+                            }
+                            _ => Json(MessageResponse {
+                                message: format!("TaskRun created but pod lookup failed"),
+                            }),
+                        }
+                    } else {
+                        Json(MessageResponse {
+                            message: format!("TaskRun created but name could not be parsed:\n{}", stdout),
+                        })
+                    }
+                }
+            
+                Ok(Ok(output)) => {
+                    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+                    Json(MessageResponse {
+                        message: format!("kubectl error creating TaskRun: {}", stderr),
+                    })
+                }
+            
+                Ok(Err(e)) => Json(MessageResponse {
+                    message: format!("Failed to run kubectl for TaskRun: {}", e),
+                }),
+            
+                Err(e) => Json(MessageResponse {
+                    message: format!("Blocking task failed for TaskRun: {}", e),
+                }),
             }
-        }
-    
+        },
         Ok(Ok(output)) => {
             let stderr = String::from_utf8_lossy(&output.stderr).to_string();
             Json(MessageResponse {
-                message: format!("kubectl error: {}", stderr),
+                message: format!("Failed to create ConfigMap: {}", stderr),
             })
-        }
-    
+        },
         Ok(Err(e)) => Json(MessageResponse {
-            message: format!("Failed to run kubectl: {}", e),
+            message: format!("Failed to run kubectl for ConfigMap: {}", e),
         }),
-    
         Err(e) => Json(MessageResponse {
-            message: format!("Blocking task failed: {}", e),
+            message: format!("Blocking task failed for ConfigMap: {}", e),
         }),
     }
-    
 }
-
 
 #[openapi(tag = "Kubernetes")]
 #[post("/kubectl/logs", format = "json", data = "<params>")]

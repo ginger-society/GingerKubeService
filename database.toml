@@ -1,11 +1,11 @@
 [schema]
 branch = "main"
-cache_schema_id = "a3f5e631-8225-4ac5-85b9-71ecd107bb6c"
+cache_schema_id = ""
 lang = "Rust"
 orm = "Diesel"
 root = "src/models"
-schema_id = "a56e44a9-cfc6-4f69-9b7f-510789b6fa80"
-url = "https://iam-db-runtime-675766508318.asia-south1.run.app"
+schema_id = ""
+url = ""
 
 [tables]
-names = ["user", "app", "group"]
+names = []

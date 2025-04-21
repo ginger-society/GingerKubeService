@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct KubectlRequest {
-    pub config_map_name: String,
+    pub models_py_content: String,
 }
 
 

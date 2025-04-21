@@ -15,10 +15,10 @@ RUN cargo build --release
 FROM gingersociety/rust-rocket-api-runner:latest
 
 # Copy the compiled binary from the builder stage
-COPY --from=builder /app/target/release/SampleService /app/
+COPY --from=builder /app/target/release/GingerKubeService /app/
 
 # Set the working directory
 WORKDIR /app
 
 # Run the executable when the container starts
-ENTRYPOINT ["./SampleService"]
+ENTRYPOINT ["./GingerKubeService"]
