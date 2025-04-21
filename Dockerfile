@@ -12,7 +12,12 @@ RUN ginger-connector connect stage-k8
 RUN cargo build --release
 
 # Second stage: Create the minimal runtime image
-FROM gingersociety/rust-rocket-api-runner:latest
+FROM containers.gingersociety.org/rust-rocket-api-runner:latest
+
+# Install kubectl
+RUN curl -LO "https://dl.k8s.io/release/$(curl -sL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && \
+    install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl && \
+    rm kubectl
 
 # Copy the compiled binary from the builder stage
 COPY --from=builder /app/target/release/GingerKubeService /app/
