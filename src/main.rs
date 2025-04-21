@@ -23,12 +23,12 @@ fn rocket() -> Rocket<Build> {
     let prometheus = PrometheusMetrics::new();
 
     let mut server = rocket::build()
-        .manage(db::connect_rdb())
+        // .manage(db::connect_rdb())
         .attach(fairings::cors::CORS)
         .attach(prometheus.clone())
         .mount(
             format!("/{}/", SERVICE_PREFIX),
-            openapi_get_routes![routes::index,],
+            openapi_get_routes![routes::index, routes::kubectl_command],
         )
         .mount(
             format!("/{}/api-docs", SERVICE_PREFIX),
