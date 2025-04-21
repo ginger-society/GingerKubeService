@@ -1,4 +1,4 @@
-FROM gingersociety/rust-rocket-api-builder:latest as builder
+FROM containers.gingersociety.org/gingersociety/rust-rocket-api-builder:latest as builder
 
 ARG GINGER_TOKEN
 

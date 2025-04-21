@@ -63,11 +63,11 @@ spec:
           --build-arg GINGER_TOKEN=$GINGER_TOKEN \
           --isolation=chroot \
           --storage-driver=vfs \
-          -t containers.gingersociety.org/rackmint/provisioner-service \
+          -t containers.gingersociety.org/gingersociety/ginger-kube-service:latest \
           --root=$CONTAINERS_STORAGE \
           .
 
-        buildah push containers.gingersociety.org/rackmint/provisioner-service
+        buildah push containers.gingersociety.org/gingersociety/ginger-kube-service:latest
 
       securityContext:
         privileged: true
