@@ -15,6 +15,7 @@ spec:
       - name: kubeconfig
       - name: buildah-cache  # Workspace for caching
       - name: pipeline-secrets
+      - name: general-purpose-cache
   steps:
     - name: clone
       image: containers.gingersociety.org/secure-git-task-runner:latest
