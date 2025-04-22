@@ -3,10 +3,14 @@ use std::process::{Command, Stdio};
 use std::io::Write;
 
 use ginger_shared_rs::rocket_models::MessageResponse;
+use rocket::tokio;
 use rocket::{serde::json::Json, tokio::task};
 use rocket_okapi::openapi;
+use serde_json::{json, Value};
 
 use crate::models::request::{KubectlRequest, LogRequest};
+use anyhow::{Result, Context};
+
 
 #[openapi()]
 #[get("/")]
@@ -215,52 +219,78 @@ spec:
 
 #[openapi()]
 #[post("/kubectl/logs", format = "json", data = "<params>")]
-pub async fn kubectl_logs(params: Json<LogRequest>) -> Json<MessageResponse> {
+pub async fn kubectl_logs(params: Json<LogRequest>) -> Json<Value> {
     let taskrun_name = params.taskrun_name.clone();
     let step_name = params.step_name.clone();
     let namespace = "tasks-ginger-db-compose-runtime";
+    let pod_name = format!("{}-pod", taskrun_name);
 
-    let pod_name_result = task::spawn_blocking(move || {
-        let output = Command::new("kubectl")
-            .arg("get")
-            .arg("pods")
-            .arg("-n")
-            .arg(namespace)
-            .arg("-l")
-            .arg(format!("tekton.dev/taskRun={}", taskrun_name))
-            .arg("-o")
-            .arg("jsonpath={.items[0].metadata.name}")
-            .env("KUBECONFIG", env::var("KUBECONFIG_PATH").expect("KUBECONFIG_PATH must be set"))
-            .output()?;
-        Ok::<_, std::io::Error>(String::from_utf8_lossy(&output.stdout).trim().to_string())
-    })
-    .await;
+    // Spawn to get logs
+    let logs_task = task::spawn_blocking({
+        let pod_name = pod_name.clone();
+        let step_name = step_name.clone();
+        move || {
+            let output = Command::new("kubectl")
+                .arg("logs")
+                .arg("-n")
+                .arg(namespace)
+                .arg(&pod_name)
+                .arg("-c")
+                .arg(step_name)
+                .env("KUBECONFIG", env::var("KUBECONFIG_PATH").expect("KUBECONFIG_PATH must be set"))
+                .output()?;
+            Ok::<_, std::io::Error>(String::from_utf8_lossy(&output.stdout).to_string())
+        }
+    });
 
-    let pod_name = match pod_name_result {
-        Ok(Ok(name)) if !name.is_empty() => name,
-        Ok(Ok(_)) => return Json(MessageResponse { message: "No pod found for TaskRun".to_string() }),
-        Ok(Err(e)) => return Json(MessageResponse { message: format!("Error getting pod name: {}", e) }),
-        Err(e) => return Json(MessageResponse { message: format!("Spawn error: {}", e) }),
+    // Spawn to get step status
+    let status_task = task::spawn_blocking({
+        let taskrun_name = taskrun_name.clone();
+        move || -> Result<String> {
+            let output = Command::new("kubectl")
+                .arg("get")
+                .arg("taskrun")
+                .arg(&taskrun_name)
+                .arg("-n")
+                .arg(namespace)
+                .arg("-o")
+                .arg("json")
+                .env("KUBECONFIG", env::var("KUBECONFIG_PATH")?)
+                .output()
+                .context("Failed to run kubectl")?;
+    
+            let json: Value = serde_json::from_slice(&output.stdout)
+                .context("Failed to parse JSON")?;
+    
+            let status = json["status"]["steps"]
+                .as_array()
+                .and_then(|steps| {
+                    steps.iter().find(|step| step["name"] == step_name)
+                })
+                .and_then(|step| step["terminated"]["reason"].as_str().map(String::from))
+                .unwrap_or("Unknown".into());
+    
+            Ok(status)
+        }
+    });
+    
+
+    let (logs, status) = tokio::join!(logs_task, status_task);
+
+    let logs_result = match logs {
+        Ok(Ok(logs)) => logs,
+        Ok(Err(e)) => format!("Error getting logs: {}", e),
+        Err(e) => format!("Spawn error (logs): {}", e),
     };
 
-    let step_name_clone = step_name.clone();
-    let log_output_result = task::spawn_blocking(move || {
-        let output = Command::new("kubectl")
-            .arg("logs")
-            .arg("-n")
-            .arg(namespace)
-            .arg(&pod_name)
-            .arg("-c")
-            .arg(step_name_clone)
-            .env("KUBECONFIG", env::var("KUBECONFIG_PATH").expect("KUBECONFIG_PATH must be set"))
-            .output()?;
-        Ok::<_, std::io::Error>(String::from_utf8_lossy(&output.stdout).to_string())
-    })
-    .await;
+    let status_result = match status {
+        Ok(Ok(status)) => status,
+        Ok(Err(e)) => format!("Error getting step status: {}", e),
+        Err(e) => format!("Spawn error (status): {}", e),
+    };
 
-    match log_output_result {
-        Ok(Ok(logs)) => Json(MessageResponse { message: logs }),
-        Ok(Err(e)) => Json(MessageResponse { message: format!("Error getting logs: {}", e) }),
-        Err(e) => Json(MessageResponse { message: format!("Spawn error: {}", e) }),
-    }
+    Json(json!({
+        "logs": logs_result,
+        "status": status_result,
+    }))
 }
