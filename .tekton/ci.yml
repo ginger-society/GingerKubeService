@@ -85,4 +85,21 @@ spec:
         kubectl rollout restart deployment ginger-kube-deployment \
           -n default
 
+    - name: publish-metadata
+      image: containers.gingersociety.org/rust-rocket-api-builder:latest
+      script: |
+        #!/bin/sh
+        set -e
 
+        echo "Waiting 10 seconds before publishing metadata..."
+        sleep 10
+
+        echo "Logging in using ginger-auth..."
+        export GINGER_TOKEN=$(cat /workspace/pipeline-secrets/GINGER_TOKEN)
+        ginger-auth token-login "$GINGER_TOKEN"
+
+        echo "Publishing metadata to prod..."
+        ginger-connector publish prod
+
+        echo "Publishing metadata to stage..."
+        ginger-connector publish stage
