@@ -73,3 +73,16 @@ spec:
         privileged: true
 
 
+    - name: restart-deployment
+      image: containers.gingersociety.org/secure-git-task-runner:latest
+      script: |
+        #!/bin/sh
+        set -e
+        echo "🔹 Setting KUBECONFIG..."
+        cp -r /workspace/kubeconfig /keys
+        export KUBECONFIG=/workspace/kubeconfig/kubeconfig.gingersociety.prod.yml
+        echo "Rolling out restart"
+        kubectl rollout restart deployment ginger-kube-deployment \
+          -n default
+
+

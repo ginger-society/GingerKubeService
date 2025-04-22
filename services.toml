@@ -14,8 +14,8 @@ stage_k8 = "http://iam-service-api-service/iam"
 [ws_refs]
 
 [urls]
-stage_k8 = "http://iam-service-api-service/iam"
-stage = "https://api-staging.gingersociety.org/iam"
-prod = "https://exampleapi.com"
-prod_k8 = "https://exampleapi.com"
-dev = "http://localhost:8080/iam"
+stage_k8 = "http://ginger-kube-service/kube"
+stage = "https://api-staging.gingersociety.org/kube"
+prod = "https://api.gingersociety.org/kube"
+prod_k8 = "http://ginger-kube-service/kube"
+dev = "http://localhost:8080/kube"
