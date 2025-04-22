@@ -15,7 +15,9 @@ stage_k8 = "http://iam-service-api-service/iam"
 
 [urls]
 stage_k8 = "http://ginger-kube-service/kube"
-stage = "https://api-staging.gingersociety.org/kube"
+stage = "https://api.gingersociety.org/kube"
 prod = "https://api.gingersociety.org/kube"
 prod_k8 = "http://ginger-kube-service/kube"
 dev = "http://localhost:8080/kube"
+
+[urls_ws]

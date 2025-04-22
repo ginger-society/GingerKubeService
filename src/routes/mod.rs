@@ -17,7 +17,7 @@ pub fn index() -> Json<MessageResponse> {
 }
 
 
-#[openapi(tag = "Kubernetes")]
+#[openapi()]
 #[post("/kubectl", format = "json", data = "<params>")]
 pub async fn kubectl_command(params: Json<KubectlRequest>) -> Json<MessageResponse> {
     let models_py_content = params.models_py_content.clone();
@@ -213,7 +213,7 @@ spec:
     }
 }
 
-#[openapi(tag = "Kubernetes")]
+#[openapi()]
 #[post("/kubectl/logs", format = "json", data = "<params>")]
 pub async fn kubectl_logs(params: Json<LogRequest>) -> Json<MessageResponse> {
     let taskrun_name = params.taskrun_name.clone();
