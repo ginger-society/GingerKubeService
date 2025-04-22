@@ -265,7 +265,7 @@ pub async fn kubectl_logs(params: Json<LogRequest>) -> Json<Value> {
             let status = json["status"]["steps"]
                 .as_array()
                 .and_then(|steps| {
-                    steps.iter().find(|step| step["name"] == step_name)
+                    steps.iter().find(|step| step["name"] == step_name.replace("step-" , ""))
                 })
                 .and_then(|step| step["terminated"]["reason"].as_str().map(String::from))
                 .unwrap_or("Unknown".into());
