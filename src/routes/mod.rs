@@ -188,34 +188,51 @@ spec:
         }),
     }
 }
-
 #[openapi()]
 #[post("/kubectl/logs", format = "json", data = "<params>")]
 pub async fn kubectl_logs(params: Json<LogRequest>) -> Json<KubectlLogsResponse> {
+    use std::io::{BufReader, BufRead};
+    
     let taskrun_name = params.taskrun_name.clone();
     let step_name = params.step_name.clone();
     let namespace = "tasks-ginger-db-compose-runtime";
     let pod_name = format!("{}-pod", taskrun_name);
 
-    let logs_task = task::spawn_blocking({
+    let logs_result = task::spawn_blocking({
         let pod_name = pod_name.clone();
         let step_name = step_name.clone();
-        move || {
-            let output = Command::new("kubectl")
+        move || -> Result<String, std::io::Error> {
+            let mut cmd = Command::new("kubectl")
                 .arg("logs")
                 .arg("-n")
                 .arg(namespace)
                 .arg(&pod_name)
                 .arg("-c")
-                .arg(step_name)
+                .arg(&step_name)
+                .arg("-f") // <-- stream logs
                 .env("KUBECONFIG", env::var("KUBECONFIG_PATH").expect("KUBECONFIG_PATH must be set"))
-                .output()?;
-            Ok::<_, std::io::Error>(String::from_utf8_lossy(&output.stdout).to_string())
-        }
-    });
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()?;
 
-    let status_task = task::spawn_blocking({
+            let stdout = cmd.stdout.take().expect("Failed to open stdout");
+            let reader = BufReader::new(stdout);
+            let mut lines = Vec::new();
+
+            for line in reader.lines() {
+                let line = line?;
+                lines.push(line);
+            }
+
+            // Wait for command to finish just to be safe
+            let _ = cmd.wait();
+            Ok(lines.join("\n"))
+        }
+    }).await;
+
+    let status_result = task::spawn_blocking({
         let taskrun_name = taskrun_name.clone();
+        let step_name = step_name.clone();
         move || -> Result<String> {
             let output = Command::new("kubectl")
                 .arg("get")
@@ -242,24 +259,22 @@ pub async fn kubectl_logs(params: Json<LogRequest>) -> Json<KubectlLogsResponse>
 
             Ok(status)
         }
-    });
+    }).await;
 
-    let (logs, status) = tokio::join!(logs_task, status_task);
-
-    let logs_result = match logs {
+    let logs = match logs_result {
         Ok(Ok(logs)) => logs,
-        Ok(Err(e)) => format!("Error getting logs: {}", e),
+        Ok(Err(e)) => format!("Error streaming logs: {}", e),
         Err(e) => format!("Spawn error (logs): {}", e),
     };
 
-    let status_result = match status {
+    let status = match status_result {
         Ok(Ok(status)) => status,
         Ok(Err(e)) => format!("Error getting step status: {}", e),
         Err(e) => format!("Spawn error (status): {}", e),
     };
 
     Json(KubectlLogsResponse {
-        logs: logs_result,
-        status: status_result,
+        logs,
+        status,
     })
 }
