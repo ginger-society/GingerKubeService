@@ -26,20 +26,28 @@ pub async fn kubectl_command(params: Json<KubectlRequest>) -> Json<TaskRunRespon
     let models_py_content = params.models_py_content.clone();
 
     let config_map_result = task::spawn_blocking(move || {
+        let commit_message = params.commit_message.clone().unwrap_or_default();
+        let commit_flag = params.commit.to_string();
+
         let config_map = format!(
-            r#"apiVersion: v1
+r#"apiVersion: v1
 kind: ConfigMap
 metadata:
   generateName: models-py-
   namespace: tasks-ginger-db-compose-runtime
 data:
   models.json: |
-{}"#,
-            models_py_content
+{models}
+  commit_message: "{commit_message}"
+  commit: "{commit_flag}"
+"#,
+            models = models_py_content
                 .lines()
-                .map(|line| format!("    {}", line))
+                .map(|line| format!("    {}", line)) // indent inside block
                 .collect::<Vec<_>>()
-                .join("\n")
+                .join("\n"),
+            commit_message = commit_message.replace('"', "\\\""),
+            commit_flag = commit_flag
         );
 
         let mut cmd = Command::new("kubectl")
@@ -188,6 +196,7 @@ spec:
         }),
     }
 }
+
 #[openapi()]
 #[post("/kubectl/logs", format = "json", data = "<params>")]
 pub async fn kubectl_logs(params: Json<LogRequest>) -> Json<KubectlLogsResponse> {
