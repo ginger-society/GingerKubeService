@@ -28,6 +28,8 @@ pub async fn kubectl_command(params: Json<KubectlRequest>) -> Json<TaskRunRespon
     let config_map_result = task::spawn_blocking(move || {
         let commit_message = params.commit_message.clone().unwrap_or_default();
         let commit_flag = params.commit.to_string();
+        let repo_name = params.repo_name.to_string();
+        let db_name = params.db_name.to_string();
 
         let config_map = format!(
 r#"apiVersion: v1
@@ -40,6 +42,8 @@ data:
 {models}
   commit_message: "{commit_message}"
   commit: "{commit_flag}"
+  repo_name: "{repo_name}"
+  db_name: "{db_name}"
 "#,
             models = models_py_content
                 .lines()
@@ -47,7 +51,9 @@ data:
                 .collect::<Vec<_>>()
                 .join("\n"),
             commit_message = commit_message.replace('"', "\\\""),
-            commit_flag = commit_flag
+            commit_flag = commit_flag,
+            repo_name = repo_name,
+            db_name=db_name
         );
 
         let mut cmd = Command::new("kubectl")

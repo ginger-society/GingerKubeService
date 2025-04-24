@@ -7,6 +7,8 @@ pub struct KubectlRequest {
     pub models_py_content: String,
     pub commit_message: Option<String>,
     pub commit: bool,
+    pub repo_name: String,
+    pub db_name: String
 }
 
 
