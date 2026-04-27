@@ -1,4 +1,4 @@
-FROM containers.gingersociety.org/rust-rocket-api-builder:latest as builder
+FROM gingersociety/rust-rocket-api-builder:latest as builder
 
 ARG GINGER_TOKEN
 
@@ -12,7 +12,7 @@ RUN ginger-connector connect stage-k8
 RUN cargo build --release
 
 # Second stage: Create the minimal runtime image
-FROM containers.gingersociety.org/rust-rocket-api-runner:latest
+FROM gingersociety/rust-rocket-api-runner:latest
 
 RUN apt-get update && apt-get install -y \
     curl
