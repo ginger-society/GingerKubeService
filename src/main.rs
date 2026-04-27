@@ -28,7 +28,7 @@ fn rocket() -> Rocket<Build> {
         .attach(prometheus.clone())
         .mount(
             format!("/{}/", SERVICE_PREFIX),
-            openapi_get_routes![routes::index, routes::kubectl_command, routes::kubectl_logs],
+            openapi_get_routes![routes::index, routes::tekton_taskrun_create, routes::tekton_taskrun_logs],
         )
         .mount(
             format!("/{}/api-docs", SERVICE_PREFIX),

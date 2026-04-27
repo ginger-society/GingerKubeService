@@ -21,8 +21,8 @@ pub fn index() -> Json<MessageResponse> {
     })
 }
 #[openapi()]
-#[post("/kubectl", format = "json", data = "<params>")]
-pub async fn kubectl_command(params: Json<KubectlRequest>) -> Json<TaskRunResponse> {
+#[post("/tekton/taskrun/create", format = "json", data = "<params>")]
+pub async fn tekton_taskrun_create(params: Json<KubectlRequest>) -> Json<TaskRunResponse> {
     let models_py_content = params.models_py_content.clone();
 
     let config_map_result = task::spawn_blocking(move || {
@@ -204,8 +204,8 @@ spec:
 }
 
 #[openapi()]
-#[post("/kubectl/logs", format = "json", data = "<params>")]
-pub async fn kubectl_logs(params: Json<LogRequest>) -> Json<KubectlLogsResponse> {
+#[post("/tekton/taskrun/logs", format = "json", data = "<params>")]
+pub async fn tekton_taskrun_logs(params: Json<LogRequest>) -> Json<KubectlLogsResponse> {
     use std::io::{BufReader, BufRead};
     
     let taskrun_name = params.taskrun_name.clone();

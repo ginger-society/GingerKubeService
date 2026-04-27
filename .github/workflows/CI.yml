@@ -8,7 +8,7 @@ on:
 
 jobs:
   build-and-push:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout repository
@@ -73,8 +73,6 @@ jobs:
 
       - name: Publish stage using ginger-connector
         run: ginger-connector publish stage
-        env:
-          GINGER_API_TOKEN: ${{ secrets.GINGER_API_TOKEN }}
         continue-on-error: false
       - name: Report failure if publish stage fails
         if: failure()
@@ -82,8 +80,6 @@ jobs:
 
       - name: Publish stage using ginger-connector for k8
         run: ginger-connector publish stage-k8
-        env:
-          GINGER_API_TOKEN: ${{ secrets.GINGER_API_TOKEN }}
         continue-on-error: false
       - name: Report failure if publish stage-k8 fails
         if: failure()
